@@ -1,4 +1,4 @@
-[ gh, assert, nock, mock_robot ] = require "./test_helper"
+[ gh, assert, nock ] = require "./test_helper"
 
 describe "qualified_repo", ->
   it "returns full name when given full name", ->
@@ -22,9 +22,3 @@ describe "qualified_repo", ->
     assert.equal "sherlock/bar", gh.qualified_repo()
     delete process.env.HUBOT_GITHUB_USER
     delete process.env.HUBOT_GITHUB_REPO
-  it "complains when no username available", ->
-    assert.equal "bar", gh.qualified_repo "bar"
-    assert.ok /github user/i.exec mock_robot.logs.error.pop()
-  it "complains when no repo available", ->
-    assert.equal null, gh.qualified_repo null
-    assert.ok /github repo/i.exec mock_robot.logs.error.pop()

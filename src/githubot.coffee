@@ -10,7 +10,7 @@ class Github
     newOpts = {}
     newOpts[k] = v for k,v of @options
     newOpts[k] = v for k,v of specialOptions
-    new @constructor newOpts
+    new Github newOpts
 
   qualified_repo: (repo) ->
     unless repo?
@@ -55,7 +55,7 @@ class Github
           reject
             statusCode: res.statusCode
             body: body
-            error: responseData.message
+            error: responseData?.error
 
   get: (url, data) ->
     if data?
