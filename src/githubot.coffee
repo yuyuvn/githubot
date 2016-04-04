@@ -1,36 +1,27 @@
 http = require "scoped-http-client"
-async = require "async"
 querystring = require "querystring"
 
 version = require("../package.json")["version"]
 
 class Github
-  constructor: (@logger, @options) ->
-    @requestQueue = async.queue (task, cb) =>
-      task.run cb
-    , @_opt "concurrentRequests"
+  constructor: (@options) ->
+
   withOptions: (specialOptions) ->
     newOpts = {}
     newOpts[k] = v for k,v of @options
     newOpts[k] = v for k,v of specialOptions
-    g = new @constructor @logger, newOpts
-    g.requestQueue = @requestQueue
-    g
+    new @constructor newOpts
+
   qualified_repo: (repo) ->
     unless repo?
       unless (repo = @_opt "defaultRepo")?
-        @logger.error "Default Github repo not specified"
         return null
     repo = repo.toLowerCase()
     return repo unless repo.indexOf("/") is -1
     unless (user = @_opt "defaultUser")?
-      @logger.error "Default Github user not specified"
       return repo
     "#{user}/#{repo}"
-  request: (verb, url, data, cb) ->
-    unless cb?
-      [cb, data] = [data, null]
-
+  request: (verb, url, data) ->
     url_api_base = @_opt("apiRoot")
 
     if url[0..3] isnt "http"
@@ -43,64 +34,48 @@ class Github
     args = []
     args.push JSON.stringify data if data?
     args.push "" if verb is "DELETE" and not data?
-    task = run: (cb) -> req[verb.toLowerCase()](args...) cb
-    @requestQueue.push task, (err, res, body) =>
-      if err?
-        return @_errorHandler
-          statusCode: res?.statusCode
-          body: res?.body
-          error: err
+    new Promise (resolve, reject) ->
+      req[verb.toLowerCase()](args...) (err, res, body) =>
+        if err?
+          reject
+            statusCode: res?.statusCode
+            body: res?.body
+            error: err
+        try
+          responseData = JSON.parse body if body
+        catch e
+          reject
+            statusCode: res.statusCode
+            body: body
+            error: "Could not parse response: #{body}"
 
-      try
-        responseData = JSON.parse body if body
-      catch e
-        return @_errorHandler
-          statusCode: res.statusCode
-          body: body
-          error: "Could not parse response: #{body}"
+        if (200 <= res.statusCode < 300)
+          resolve responseData
+        else
+          reject
+            statusCode: res.statusCode
+            body: body
+            error: responseData.message
 
-      if (200 <= res.statusCode < 300)
-        cb responseData
-      else
-        @_errorHandler
-          statusCode: res.statusCode
-          body: body
-          error: responseData.message
-
-  get: (url, data, cb) ->
-    unless cb?
-      [cb, data] = [data, null]
+  get: (url, data) ->
     if data?
       url += "?" + querystring.stringify data
-    @request "GET", url, cb
+    @request "GET", url
 
   post: (url, data, cb) ->
-    @request "POST", url, data, cb
+    @request "POST", url, data
 
   delete: (url, cb) ->
-    @request "DELETE", url, null, cb
+    @request "DELETE", url
 
   put: (url, data, cb) ->
-    @request "PUT", url, data, cb
+    @request "PUT", url, data
 
   patch: (url, data, cb) ->
-    @request "PATCH", url, data, cb
+    @request "PATCH", url, data
 
   handleErrors: (callback) ->
     @options.errorHandler = callback
-
-  _loggerErrorHandler: (response) ->
-    message = response.error
-    message = "#{response.statusCode} #{message}" if response.statusCode?
-    @logger.error message
-
-  _errorHandler: (response) ->
-    @options.errorHandler?(response)
-    @_loggerErrorHandler response
-
-  branches: require './branches'
-
-  deployments: require './deployments'
 
   _opt: (optName) ->
     @options ?= {}
@@ -121,17 +96,7 @@ class Github
         process.env.HUBOT_GITHUB_API_VERSION ? "v3"
       else null
 
-module.exports = github = (robot, options = {}) ->
-  new Github robot.logger, options
+module.exports = github = (options = {}) ->
+  new Github options
 
 github[method] = func for method,func of Github.prototype
-
-github.logger = {
-  error: (msg) ->
-    console.error "ERROR: #{msg}"
-  debug: ->
-}
-
-github.requestQueue = async.queue (task, cb) =>
-  task.run cb
-, process.env.HUBOT_CONCURRENT_REQUESTS ? 20
